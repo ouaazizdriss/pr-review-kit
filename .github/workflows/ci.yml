@@ -1,0 +1,37 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq shellcheck >/dev/null
+          git clone -q --depth 1 --branch v1.11.1 https://github.com/bats-core/bats-core.git /tmp/bats
+
+      - name: Shellcheck
+        run: |
+          cd plugins/pr-review-kit/scripts
+          # kit scripts: warnings are errors
+          shellcheck -x -S warning lib/common.sh scan.sh filter.sh post.sh show-config.sh doctor.sh \
+            init-workspace.sh jira-issue.sh wfa-reminder.sh gchat-notify.sh check-merge.sh scan-pr.sh \
+            check-test-compile.sh merge/*.sh
+          # helpers carried over from the original tooling: errors only
+          shellcheck -x -S error list-prs-by-ticket.sh check-pr-deployed.sh protect-branch.sh
+
+      - name: Unit tests
+        run: /tmp/bats/bin/bats plugins/pr-review-kit/tests
+
+      - name: Plugin and marketplace validation
+        continue-on-error: true   # needs the Claude Code CLI; informative in CI
+        run: |
+          npm install -g @anthropic-ai/claude-code >/dev/null 2>&1
+          claude plugin validate --strict plugins/pr-review-kit
+          claude plugin validate --strict .

@@ -1,0 +1,101 @@
+{
+  "value": [
+    {
+      "pullRequestId": 101,
+      "status": "active",
+      "isDraft": false,
+      "title": "ABC-1 add feature",
+      "sourceRefName": "refs/heads/feature/x",
+      "targetRefName": "refs/heads/develop",
+      "mergeStatus": "succeeded",
+      "creationDate": "2026-10-01T08:00:00Z",
+      "repository": {
+        "name": "svc-a"
+      },
+      "createdBy": {
+        "id": "other",
+        "displayName": "Author Name"
+      },
+      "reviewers": [
+        {
+          "id": "me-0001",
+          "vote": 10,
+          "isRequired": true
+        }
+      ]
+    },
+    {
+      "pullRequestId": 102,
+      "status": "active",
+      "isDraft": true,
+      "title": "ABC-2 draft work",
+      "sourceRefName": "refs/heads/feature/x",
+      "targetRefName": "refs/heads/develop",
+      "mergeStatus": "succeeded",
+      "creationDate": "2026-10-01T08:00:00Z",
+      "repository": {
+        "name": "svc-a"
+      },
+      "createdBy": {
+        "id": "other",
+        "displayName": "Author Name"
+      },
+      "reviewers": [
+        {
+          "id": "me-0001",
+          "vote": 0,
+          "isRequired": true
+        }
+      ]
+    },
+    {
+      "pullRequestId": 103,
+      "status": "active",
+      "isDraft": false,
+      "title": "ABC-3 my own change",
+      "sourceRefName": "refs/heads/feature/x",
+      "targetRefName": "refs/heads/develop",
+      "mergeStatus": "succeeded",
+      "creationDate": "2026-10-01T08:00:00Z",
+      "repository": {
+        "name": "svc-a"
+      },
+      "createdBy": {
+        "id": "me-0001",
+        "displayName": "Author Name"
+      },
+      "reviewers": [
+        {
+          "id": "me-0001",
+          "vote": 0,
+          "isRequired": true
+        }
+      ]
+    },
+    {
+      "pullRequestId": 104,
+      "status": "active",
+      "isDraft": false,
+      "title": "no ticket here",
+      "sourceRefName": "refs/heads/feature/x",
+      "targetRefName": "refs/heads/develop",
+      "mergeStatus": "succeeded",
+      "creationDate": "2026-10-01T08:00:00Z",
+      "repository": {
+        "name": "svc-a"
+      },
+      "createdBy": {
+        "id": "other",
+        "displayName": "Author Name"
+      },
+      "reviewers": [
+        {
+          "id": "me-0001",
+          "vote": 0,
+          "isRequired": true
+        }
+      ]
+    }
+  ],
+  "count": 4
+}

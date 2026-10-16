@@ -1,0 +1,17 @@
+{
+  "name": "pr-review-tools",
+  "owner": {
+    "name": "pr-review-kit maintainers"
+  },
+  "metadata": {
+    "description": "Policy-driven pull-request review and release tooling for Azure DevOps teams"
+  },
+  "plugins": [
+    {
+      "name": "pr-review-kit",
+      "source": "./plugins/pr-review-kit",
+      "description": "Review, vote, merge and deploy automation for Azure DevOps pull requests, driven by a versioned review policy",
+      "category": "code-review"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+# Repositories in scope, one name per line (exactly as in Azure DevOps).
+# Lines starting with # and blank lines are ignored. Only these repositories are
+# scanned, reviewed, reminded or merged.
+my-service
+my-portal
+sql

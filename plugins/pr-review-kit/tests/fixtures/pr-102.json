@@ -1,0 +1,24 @@
+{
+  "pullRequestId": 102,
+  "status": "active",
+  "isDraft": true,
+  "title": "ABC-2 draft work",
+  "sourceRefName": "refs/heads/feature/x",
+  "targetRefName": "refs/heads/develop",
+  "mergeStatus": "succeeded",
+  "creationDate": "2026-10-01T08:00:00Z",
+  "repository": {
+    "name": "svc-a"
+  },
+  "createdBy": {
+    "id": "other",
+    "displayName": "Author Name"
+  },
+  "reviewers": [
+    {
+      "id": "me-0001",
+      "vote": 0,
+      "isRequired": true
+    }
+  ]
+}

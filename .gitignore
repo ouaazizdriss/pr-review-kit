@@ -1,0 +1,6 @@
+# local workspaces and run artefacts never belong in the kit repository
+state/
+reviews/
+*.log
+.DS_Store
+plugins/pr-review-kit/tests/**/tmp/

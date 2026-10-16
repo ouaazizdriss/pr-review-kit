@@ -1,0 +1,5 @@
+# Deployment pipelines for the merge-deploy module: <service repository>=<pipeline id>
+# The pipeline must be named after the service (deploy.sh refuses otherwise) and accept
+# the environment as the template parameter "env".
+# my-service=12
+# my-portal=34

@@ -1,0 +1,71 @@
+# Scheduled review loop + waiting-for-author reminder for one team.
+# Put this file in the TEAM WORKSPACE repository (the one holding config.env,
+# repos.allowlist, state/ and reviews/), then create a pipeline from it.
+#
+# Variable group "pr-review-kit-secrets" (link it to Azure Key Vault if you can):
+#   AZURE_DEVOPS_PAT   review bot token (Code read, PR threads read & write, contribute to PRs)
+#   ANTHROPIC_API_KEY  key used by Claude Code in headless mode
+#   JIRA_PAT           optional
+#   GCHAT_WEBHOOK_URL  optional
+#   GITHUB_PAT         read access to the private marketplace repository
+# Pipeline variables: CLAUDE_CODE_VERSION (pinned), KIT_VERSION (e.g. 1.0.0).
+#
+# Verified on Claude Code 2.1.300: a namespaced plugin skill runs in headless mode
+# (claude -p "/pr-review-kit:doctor", plugin loaded with --plugin-dir, ${CLAUDE_PLUGIN_ROOT}
+# substituted). Still to confirm on your runner: the private marketplace clone through the
+# git credential configured below, and the tool permissions of the workspace settings.
+
+schedules:
+  - cron: "*/15 7-19 * * 1-5"        # UTC — adjust to your working hours
+    displayName: review loop
+    branches: { include: [ main ] }
+    always: true
+trigger: none
+pool: { vmImage: ubuntu-latest }
+variables:
+  - group: pr-review-kit-secrets
+
+steps:
+  - checkout: self
+    persistCredentials: true
+
+  - script: |
+      set -e
+      sudo apt-get update -qq && sudo apt-get install -y -qq jq >/dev/null
+      npm install -g "@anthropic-ai/claude-code@$(CLAUDE_CODE_VERSION)"
+      git config --global credential.helper store
+      printf 'https://x-access-token:%s@github.com\n' "$GITHUB_PAT" > ~/.git-credentials
+      claude plugin marketplace add "https://github.com/ouaazizdriss/pr-review-kit.git#v$(KIT_VERSION)"
+      claude plugin install pr-review-kit@pr-review-tools --scope user -y
+    displayName: Install Claude Code and the kit
+    env:
+      GITHUB_PAT: $(GITHUB_PAT)
+
+  - script: |
+      set -e
+      claude -p "/pr-review-kit:review-loop" --output-format stream-json --verbose > run.jsonl
+      # fail the job when a plugin did not load
+      jq -e 'select(.type == "system" and .subtype == "init") | ((.plugin_errors // []) | length) == 0' run.jsonl
+    displayName: Review loop
+    env:
+      PRR_WORKSPACE: $(Build.SourcesDirectory)
+      CLAUDE_CODE_SYNC_PLUGIN_INSTALL: 1
+      AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
+      ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+      JIRA_PAT: $(JIRA_PAT)
+
+  - script: |
+      bash "$(ls -d ~/.claude/plugins/cache/pr-review-tools/pr-review-kit/*/ | sort -V | tail -n1)scripts/wfa-reminder.sh"
+    displayName: Waiting-for-author reminder
+    condition: and(succeeded(), eq(variables['Build.Reason'], 'Schedule'))
+    env:
+      PRR_WORKSPACE: $(Build.SourcesDirectory)
+      AZURE_DEVOPS_PAT: $(AZURE_DEVOPS_PAT)
+      GCHAT_WEBHOOK_URL: $(GCHAT_WEBHOOK_URL)
+
+  - script: |
+      git add -A state reviews history.md 2>/dev/null || true
+      git -c user.name="pr-review bot" -c user.email="pr-review-bot@invalid" commit -q -m "review run $(Build.BuildNumber)" || exit 0
+      git push -q origin HEAD:main
+    displayName: Persist state and reviews
+    condition: always()

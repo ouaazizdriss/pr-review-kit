@@ -1,0 +1,18 @@
+{
+  "_comment": "Jira moves done by the merge-deploy skill. Statuses are matched by name (case and accents ignored); a value starting with # is a transition id. A ticket is moved only when its current status is in 'from' — never backwards.",
+  "afterMerge": [
+    { "project": "ABC", "issueTypes": ["*"], "from": ["Code review"], "to": "Ready to deploy", "via": [] }
+  ],
+  "afterDeploy": [
+    { "project": "ABC", "issueTypes": ["Story"], "from": ["Ready to deploy"], "to": "#9", "via": [] },
+    { "project": "ABC", "issueTypes": ["Bug"], "from": ["Ready to deploy"], "to": "QA", "via": [] }
+  ],
+  "subtasks": {
+    "enabled": false,
+    "skipProjects": [],
+    "items": [
+      { "summary": "Code review", "assignee": "me", "status": "Done", "via": ["To do", "In progress"] },
+      { "summary": "Code review feedback", "assignee": "parent-assignee", "status": "Done", "via": ["To do", "In progress"] }
+    ]
+  }
+}

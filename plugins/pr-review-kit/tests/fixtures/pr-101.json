@@ -1,0 +1,24 @@
+{
+  "pullRequestId": 101,
+  "status": "active",
+  "isDraft": false,
+  "title": "ABC-1 add feature",
+  "sourceRefName": "refs/heads/feature/x",
+  "targetRefName": "refs/heads/develop",
+  "mergeStatus": "succeeded",
+  "creationDate": "2026-10-01T08:00:00Z",
+  "repository": {
+    "name": "svc-a"
+  },
+  "createdBy": {
+    "id": "other",
+    "displayName": "Author Name"
+  },
+  "reviewers": [
+    {
+      "id": "me-0001",
+      "vote": 10,
+      "isRequired": true
+    }
+  ]
+}

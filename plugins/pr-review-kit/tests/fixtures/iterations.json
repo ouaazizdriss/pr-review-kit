@@ -1,0 +1,2 @@
+{"value":[{"id":1,"createdDate":"2026-10-01T08:00:00Z","sourceRefCommit":{"commitId":"aaaa1111"},"commonRefCommit":{"commitId":"base0000"}},
+          {"id":2,"createdDate":"2026-10-02T08:00:00Z","sourceRefCommit":{"commitId":"bbbb2222"},"commonRefCommit":{"commitId":"base0000"}}]}
