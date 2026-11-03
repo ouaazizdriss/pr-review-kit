@@ -1,20 +1,28 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bash:*)",
-      "Bash(curl:*)",
-      "Bash(jq:*)",
-      "Bash(git:*)",
-      "Bash(diff:*)",
-      "Bash(date:*)",
-      "Bash(mkdir:*)",
-      "Read",
-      "Write",
-      "Edit"
+      "Bash(jq *)",
+      "Bash(date *)",
+      "Read(~/.claude/plugins/cache/pr-review-tools/pr-review-kit/**)",
+      "Edit(/reviews/**)",
+      "Edit(/state/**)",
+      "Edit(/history.md)"
     ],
     "deny": [
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)"
+      "Bash(*/../*)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(nc *)",
+      "Bash(git push *)",
+      "Bash(* | sh*)",
+      "Bash(* | bash*)",
+      "Edit(/.claude/**)",
+      "Edit(/config.env)",
+      "Edit(/repos.allowlist)",
+      "Read(~/.ssh/**)",
+      "Read(~/.git-credentials)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.m2/settings*.xml)"
     ]
   }
 }

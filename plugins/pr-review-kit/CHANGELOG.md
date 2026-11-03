@@ -7,6 +7,29 @@ All notable changes to the kit. The version is the `version` field of
 - **Minor** (x.**y**.0): a new check or setting.
 - **Major** (**x**.0.0): a change to a vote rule. Announced two weeks ahead; run it in dry-run first.
 
+## 1.0.2 — 2026-11-03
+
+Hardening release: tighter agent permissions and credential handling. No vote rule changes.
+
+- Agent permissions: skills declare `allowed-tools` limited to the kit's own scripts (plus `jq`,
+  `date`); the workspace `.claude/settings.json` no longer allows any `bash`, `curl`, `git` or
+  write — writes only under `reviews/`, `state/`, `history.md`; `curl`, `wget`, `git push`, path
+  traversal and reads of common credential files are denied. New `use-workspace.sh` selects the
+  workspace and writes the machine-specific kit rule in `.claude/settings.local.json`; skills no
+  longer prefix commands with `PRR_WORKSPACE=…`.
+- New read-only helpers replacing the agent's own `curl`: `ado-get.sh` (GET, configured
+  organisation only, no redirects) and `pr-file-diff.sh` (merge base → tip diff).
+- `check-test-compile.sh`: PRs that change `pom.xml`, `.mvn/`, `mvnw`, Maven settings or an
+  annotation-processor registration are not built (verdict `build-files-changed`,
+  `TC_ALLOW_BUILD_CHANGES=true` to override); Maven runs with an empty environment; `TC_OFFLINE`.
+- `merge/merge-pr.sh`: merges only the approved commit (tip of the last +10 in `votes.jsonl`, or
+  `--expect-tip`), re-checked just before completion; resolves only the reviewer's own threads —
+  another reviewer's active thread blocks the merge.
+- Pipeline template: GitHub token through a one-shot credential helper (nothing on disk), checkout
+  credentials not persisted and given to the push step only.
+- `list-prs-by-ticket.sh`: control characters from API text are stripped before printing.
+- Tests for the new guards (`tests/security.bats`).
+
 ## 1.0.1 — 2026-11-03
 
 - `wfa-reminder.sh`: card wording can be overridden with `WFA_TITLE`, `WFA_SUBTITLE` (`{n}` = PR count)

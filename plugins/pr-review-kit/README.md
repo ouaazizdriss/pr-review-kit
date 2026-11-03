@@ -28,7 +28,10 @@ One folder per team, created by `setup` (or `scripts/init-workspace.sh <dir>`):
 ├── team-notes.md        what reviewers of this team must know; read before every review
 ├── pipelines.map        merge-deploy: service=pipelineId
 ├── jira-workflow.json   merge-deploy: ticket moves and sub-tasks
-├── .claude/settings.json  tool permissions for sessions opened in the workspace
+├── .claude/settings.json  shared tool permissions: kit scripts only, writes under reviews/ state/
+│                        history.md, no curl / wget / git push
+├── .claude/settings.local.json  per machine, written by use-workspace.sh: the rule that allows
+│                        this machine's installed kit scripts (do not commit)
 ├── reviews/<TICKET>/<date>/review1-PR-<id>.md
 ├── history.md           one line per review
 └── state/
@@ -59,18 +62,21 @@ All under `scripts/`, runnable by hand (`bash scripts/<name>.sh`). Read-only unl
 | `show-config.sh` | effective configuration as JSON (no secrets) |
 | `doctor.sh` | environment checks |
 | `init-workspace.sh <dir>` | create a workspace from the templates |
+| `use-workspace.sh <dir>` | select the workspace and refresh this machine's kit permission rule |
+| `ado-get.sh <path\|url> [--text]` | read-only GET, limited to the configured organisation |
+| `pr-file-diff.sh <repo> <id> [--list\|<path>…]` | the PR's real diff, merge base → tip |
 | `scan.sh` | active PRs of the allow-listed repos → `state/state.jsonl` |
 | `filter.sh [--json]` | candidates and their reasons |
 | `post.sh thread\|reply\|vote\|add-required\|reopen …` | **the only write path** for comments and votes, with every guard |
 | `check-merge.sh <repo> <id>` | target conflict, sibling conflicts, semantic risk |
 | `scan-pr.sh <repo> <id>` | Semgrep + Trivy on the PR's changes |
-| `check-test-compile.sh <repo> <id>` | `mvn test-compile` at the source (and base) commit |
+| `check-test-compile.sh <repo> <id>` | `mvn test-compile` at the source (and base) commit, empty environment; PRs that change the build itself are not built |
 | `jira-issue.sh <KEY>` | ticket existence, type, status |
 | `wfa-reminder.sh [--dry-run]` | waiting-for-author card (writes to the Chat webhook only) |
 | `list-prs-by-ticket.sh` | PRs grouped by ticket (interactive with whiptail) |
 | `check-pr-deployed.sh <tickets> [release-ref]` | are a ticket's PRs in a release? |
 | `protect-branch.sh` | audit / apply branch policies (`--apply` writes) |
-| `merge/merge-pr.sh` | squash-merge an approved PR (writes) |
+| `merge/merge-pr.sh` | squash-merge an approved PR, only at the approved commit (writes) |
 | `merge/cherry-pick-pr.sh` | one-commit carry-over to another branch (writes) |
 | `merge/presence.sh` | is a change already on a branch? |
 | `merge/jira.sh` | ticket state, moves, sub-tasks (writes to Jira) |

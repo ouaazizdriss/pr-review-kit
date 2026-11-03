@@ -22,7 +22,7 @@ jobs:
           # kit scripts: warnings are errors
           shellcheck -x -S warning lib/common.sh scan.sh filter.sh post.sh show-config.sh doctor.sh \
             init-workspace.sh jira-issue.sh wfa-reminder.sh gchat-notify.sh check-merge.sh scan-pr.sh \
-            check-test-compile.sh merge/*.sh
+            check-test-compile.sh ado-get.sh pr-file-diff.sh use-workspace.sh merge/*.sh
           # helpers carried over from the original tooling: errors only
           shellcheck -x -S error list-prs-by-ticket.sh check-pr-deployed.sh protect-branch.sh
 

@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
-# merge-pr.sh <repo> <prId> [--dry-run] — squash-merge an approved PR.
+# merge-pr.sh <repo> <prId> [--dry-run] [--expect-tip SHA] — squash-merge an approved PR.
 # Prints "OK <squashCommit>[ (bypass)]" or "FAIL <reason>"; exit 0 on OK, 1 on FAIL.
 #
 # Preconditions checked live: PR active, not Draft, my vote is +10, merge evaluation
-# succeeded. Active non-system threads are resolved first. When the branch policy
-# demands more approvers, the policy is bypassed only if MERGE_ALLOW_BYPASS=true.
+# succeeded, and the source tip is the commit that was approved — the tip recorded with my
+# last +10 in $STATE_DIR/votes.jsonl, or the SHA given with --expect-tip. A push after the
+# approval therefore blocks the merge until the PR is reviewed again.
+# Only MY active threads are resolved; an active thread opened by anyone else blocks the
+# merge. When the branch policy demands more approvers, the policy is bypassed only if
+# MERGE_ALLOW_BYPASS=true.
 set -u
 . "$(dirname "$0")/lib.sh"
-r="${1:?usage: merge-pr.sh <repo> <prId> [--dry-run]}"; id="${2:?usage: merge-pr.sh <repo> <prId>}"
-DRY=0; [ "${3:-}" = "--dry-run" ] && DRY=1
+USAGE="usage: merge-pr.sh <repo> <prId> [--dry-run] [--expect-tip SHA]"
+r="${1:?$USAGE}"; id="${2:?$USAGE}"; shift 2
+DRY=0; EXPECT_TIP=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY=1; shift ;;
+    --expect-tip) EXPECT_TIP="${2:?$USAGE}"; shift 2 ;;
+    *) echo "FAIL unknown argument $1 ($USAGE)"; exit 1 ;;
+  esac
+done
 B="$ADO_REPOS_BASE/$r/pullRequests/$id"
 get() { ado_get "$B?$V"; }
 
@@ -20,16 +32,43 @@ if [ "$st" = completed ]; then echo "OK $(jq -r .lastMergeCommit.commitId <<<"$j
 [ "$dr" = true ] && { echo "FAIL draft"; exit 1; }
 [ "$(jq -r --arg me "$ME" '[.reviewers[] | select(.id == $me) | .vote][0]' <<<"$j")" = 10 ] || { echo "FAIL my vote is no longer +10"; exit 1; }
 
+# the approved commit: --expect-tip, else the tip recorded with my last +10 on this PR
+approved="$EXPECT_TIP"
+if [ -z "$approved" ] && [ -f "$STATE_DIR/votes.jsonl" ]; then
+  approved=$(jq -r --arg r "$r" --argjson id "$id" 'select(.repo == $r and .id == $id)' "$STATE_DIR/votes.jsonl" 2>/dev/null \
+    | jq -rs 'last // {} | if .vote == 10 then .tip // "" else "" end')
+fi
+[ -n "$approved" ] || { echo "FAIL no approved tip recorded for this PR (vote not cast through post.sh) — pass --expect-tip <reviewed commit>"; exit 1; }
+live=$(jq -r .lastMergeSourceCommit.commitId <<<"$j")
+[ "$live" = "$approved" ] || { echo "FAIL source tip moved since the approval: approved ${approved:0:10}, live ${live:0:10} — review the new commits first"; exit 1; }
+
 ms=$(jq -r .mergeStatus <<<"$j")
-for _ in $(seq 1 10); do [ "$ms" = queued ] || break; sleep 5; j=$(get); ms=$(jq -r .mergeStatus <<<"$j"); done
+for _ in $(seq 1 10); do [ "$ms" = queued ] || break; sleep 5; j=$(get); # the approved commit: --expect-tip, else the tip recorded with my last +10 on this PR
+approved="$EXPECT_TIP"
+if [ -z "$approved" ] && [ -f "$STATE_DIR/votes.jsonl" ]; then
+  approved=$(jq -r --arg r "$r" --argjson id "$id" 'select(.repo == $r and .id == $id)' "$STATE_DIR/votes.jsonl" 2>/dev/null \
+    | jq -rs 'last // {} | if .vote == 10 then .tip // "" else "" end')
+fi
+[ -n "$approved" ] || { echo "FAIL no approved tip recorded for this PR (vote not cast through post.sh) — pass --expect-tip <reviewed commit>"; exit 1; }
+live=$(jq -r .lastMergeSourceCommit.commitId <<<"$j")
+[ "$live" = "$approved" ] || { echo "FAIL source tip moved since the approval: approved ${approved:0:10}, live ${live:0:10} — review the new commits first"; exit 1; }
+
+ms=$(jq -r .mergeStatus <<<"$j"); done
 [ "$ms" = succeeded ] || { echo "FAIL mergeStatus=$ms"; exit 1; }
 if [ "$DRY" = 1 ]; then echo "OK dry-run (would squash-merge $(jq -r .lastMergeSourceCommit.commitId <<<"$j" | cut -c1-10))"; exit 0; fi
 
-for t in $(ado_get "$B/threads?$V" | jq -r '.value[] | select(.isDeleted != true and (.status == "active" or .status == "pending") and .comments[0].commentType != "system") | .id'); do
+threads=$(ado_get "$B/threads?$V")
+others=$(jq -r --arg me "$ME" '[.value[] | select(.isDeleted != true and (.status == "active" or .status == "pending")
+          and .comments[0].commentType != "system" and .comments[0].author.id != $me) | .id] | join(",")' <<<"$threads")
+[ -z "$others" ] || { echo "FAIL active thread(s) from other reviewers: $others — they must be resolved by their authors"; exit 1; }
+for t in $(jq -r --arg me "$ME" '.value[] | select(.isDeleted != true and (.status == "active" or .status == "pending")
+          and .comments[0].commentType != "system" and .comments[0].author.id == $me) | .id' <<<"$threads"); do
   ado_write PATCH "$B/threads/$t?$V" '{"status":"fixed"}' >/dev/null
 done
 
-tip=$(jq -r .lastMergeSourceCommit.commitId <<<"$j"); title=$(jq -r .title <<<"$j")
+# tip re-read once more just before completing: a push during the checks must not slip in
+j=$(get); tip=$(jq -r .lastMergeSourceCommit.commitId <<<"$j"); title=$(jq -r .title <<<"$j")
+[ "$tip" = "$approved" ] || { echo "FAIL source tip moved during the merge checks (${tip:0:10}) — review the new commits first"; exit 1; }
 complete() { # $1 = bypass true|false
   local body
   body=$(jq -n --arg c "$tip" --arg m "Merged PR $id: $title" --argjson bp "$1" \

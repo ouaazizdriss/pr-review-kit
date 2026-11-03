@@ -12,6 +12,17 @@
 #           | "already-broken"     -> source AND base fail with compile errors (pre-existing)
 #           | "env-unverifiable"   -> dependency resolution failed (local env), not the PR's fault
 #           | "not-maven"          -> no pom.xml (not a Maven Spring Boot project)
+#           | "build-files-changed" -> the PR changes the build itself: NOT built (see below)
+#
+# Safety: building runs code chosen by the PR author (Maven plugins and extensions, annotation
+# processors). The check therefore
+#   - refuses to build a PR that changes pom.xml, .mvn/, mvnw*, a Maven settings file or an
+#     annotation-processor registration (verdict "build-files-changed": review those by hand);
+#     TC_ALLOW_BUILD_CHANGES=true overrides this, only for repositories whose authors you trust;
+#   - runs mvn with an EMPTY environment (no AZURE_DEVOPS_PAT, ANTHROPIC_API_KEY, JIRA_PAT, …):
+#     only PATH, HOME, JAVA_HOME, MAVEN_HOME and MAVEN_OPTS are passed;
+#   - builds offline when TC_OFFLINE=true (needs every dependency already in ~/.m2).
+# For stronger isolation, run the kit itself in a container or on a throwaway CI agent.
 set -uo pipefail
 
 REPO="${1:?usage: check-test-compile.sh <repo> <prId>}"
@@ -30,6 +41,19 @@ SRC=$(echo "$ITERS" | jq -r '.value | last | .sourceRefCommit.commitId // empty'
 BASE=$(echo "$ITERS" | jq -r '.value | last | .commonRefCommit.commitId // empty')
 [ -z "$SRC" ] && err "cannot resolve source commit (PR $PRID / $REPO)"
 
+# files that change what the build executes → do not build (unless explicitly allowed)
+LASTIT=$(echo "$ITERS" | jq -r '.value | last | .id // empty')
+CHANGED=$(curl -s -H "Authorization: Basic $AUTH" "$B/$REPO/pullRequests/$PRID/iterations/$LASTIT/changes?api-version=7.0" \
+  | jq -r '.changeEntries[]? | .item.path // empty')
+[ -z "$LASTIT" ] || [ -n "$CHANGED" ] || err "cannot list the changed files (PR $PRID / $REPO)"
+BUILD_RE='(^|/)(pom\.xml|mvnw|mvnw\.cmd|settings\.xml|settings-security\.xml|toolchains\.xml)$|(^|/)\.mvn/|META-INF/services/javax\.annotation\.processing\.Processor$'
+BUILD_FILES=$(printf '%s\n' "$CHANGED" | grep -E "$BUILD_RE" | sort -u | head -20)
+if [ -n "$BUILD_FILES" ] && [ "${TC_ALLOW_BUILD_CHANGES:-false}" != true ]; then
+  jq -n --arg r "$REPO" --argjson p "$PRID" --arg s "$SRC" --arg f "$BUILD_FILES" \
+    '{repo:$r,prId:$p,src:$s[0:10],verdict:"build-files-changed",buildFiles:($f|split("\n"))}'
+  exit 0
+fi
+
 WD=$(mktemp -d "${TMPDIR:-/tmp}/tcpr.XXXXXX")
 trap 'rm -rf "$WD"' EXIT
 
@@ -42,7 +66,10 @@ checkout() { # $1=commit $2=dir
 # build $1=dir $2=log ; echoes phase: ok | compile | deps | other
 build() {
   if [ ! -f "$1/pom.xml" ]; then echo "not-maven"; return; fi
-  ( cd "$1" && timeout "$TIMEOUT" mvn -B -q -ntp -DskipTests -Dmaven.test.skip=false \
+  local off=(); [ "${TC_OFFLINE:-false}" = true ] && off=(-o)
+  ( cd "$1" && env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 \
+      ${JAVA_HOME:+JAVA_HOME="$JAVA_HOME"} ${MAVEN_HOME:+MAVEN_HOME="$MAVEN_HOME"} ${MAVEN_OPTS:+MAVEN_OPTS="$MAVEN_OPTS"} \
+      timeout "$TIMEOUT" mvn -B -q -ntp "${off[@]}" -DskipTests -Dmaven.test.skip=false \
       -Dspotless.check.skip=true -Dcheckstyle.skip=true -Djacoco.skip=true test-compile ) >"$2" 2>&1
   local rc=$?
   if [ $rc -eq 0 ]; then echo ok

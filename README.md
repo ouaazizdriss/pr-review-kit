@@ -160,11 +160,17 @@ claude --plugin-dir plugins/pr-review-kit       # try local changes without inst
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every push.
 
-## Known limits (1.0.0)
+## Known limits (1.0.2)
 
 - Linux and WSL only.
 - Azure DevOps and Jira Cloud only.
 - Headless runs were tested with `--plugin-dir`. Installing from the private marketplace on a CI
   runner depends on the git credential set up there: test it once on your runner.
+- Start review sessions from the workspace folder: the permission rules in its `.claude/settings.json`
+  (kit scripts only, no `curl`/`wget`/`git push`, writes under `reviews/`, `state/`, `history.md`)
+  apply only there. Run `use-workspace.sh` (the skills do it) after each kit upgrade.
+- `check-test-compile.sh` compiles code written by the PR author on your machine. It refuses PRs
+  that change the build and strips secrets from the environment, but annotation processors already
+  declared by the project still run: for untrusted contributors, run the kit on a throwaway agent.
 - The kit relies on your Azure DevOps branch policies for anything it does not check itself, for
   example a "reset votes on push" policy. Read the live vote; never assume a past vote still holds.

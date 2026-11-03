@@ -1,6 +1,6 @@
 {
   "name": "pr-review-kit",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Policy-driven pull-request review for Azure DevOps: candidate detection, evidence-based reviews, strict votes, merge-conflict and scanner checks, Jira consistency, waiting-for-author reminders, and an optional merge and deploy workflow.",
   "author": {
     "name": "pr-review-kit maintainers"

@@ -8,7 +8,13 @@
 #   JIRA_PAT           optional
 #   GCHAT_WEBHOOK_URL  optional
 #   GITHUB_PAT         read access to the private marketplace repository
-# Pipeline variables: CLAUDE_CODE_VERSION (pinned), KIT_VERSION (e.g. 1.0.0).
+# Pipeline variables: CLAUDE_CODE_VERSION (pinned), KIT_VERSION (e.g. 1.0.2).
+#
+# Credentials: each step receives only the secrets it needs. The GitHub token is used for the
+# marketplace clone only (one-shot credential helper, nothing written to disk); the checkout
+# token is not persisted in .git/config and is given to the final push step alone, so the agent
+# step never sees it. The agent step runs with the workspace's .claude/settings.json (kit scripts
+# only, no curl/wget/git push).
 #
 # Verified on Claude Code 2.1.300: a namespaced plugin skill runs in headless mode
 # (claude -p "/pr-review-kit:doctor", plugin loaded with --plugin-dir, ${CLAUDE_PLUGIN_ROOT}
@@ -27,16 +33,21 @@ variables:
 
 steps:
   - checkout: self
-    persistCredentials: true
+    persistCredentials: false
 
   - script: |
       set -e
       sudo apt-get update -qq && sudo apt-get install -y -qq jq >/dev/null
       npm install -g "@anthropic-ai/claude-code@$(CLAUDE_CODE_VERSION)"
-      git config --global credential.helper store
-      printf 'https://x-access-token:%s@github.com\n' "$GITHUB_PAT" > ~/.git-credentials
+      # one-shot credential for github.com, inherited by the git processes of the two
+      # commands below only: no credential store, no ~/.git-credentials
+      export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.https://github.com.helper
+      export GIT_CONFIG_VALUE_0='!f() { echo username=x-access-token; echo "password=$GITHUB_PAT"; }; f'
       claude plugin marketplace add "https://github.com/ouaazizdriss/pr-review-kit.git#v$(KIT_VERSION)"
       claude plugin install pr-review-kit@pr-review-tools --scope user -y
+      unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+      # select the workspace and write the runner-specific permission rule (settings.local.json)
+      bash "$(ls -d ~/.claude/plugins/cache/pr-review-tools/pr-review-kit/*/ | sort -V | tail -n1)scripts/use-workspace.sh" "$(Build.SourcesDirectory)"
     displayName: Install Claude Code and the kit
     env:
       GITHUB_PAT: $(GITHUB_PAT)
@@ -66,6 +77,9 @@ steps:
   - script: |
       git add -A state reviews history.md 2>/dev/null || true
       git -c user.name="pr-review bot" -c user.email="pr-review-bot@invalid" commit -q -m "review run $(Build.BuildNumber)" || exit 0
-      git push -q origin HEAD:main
+      # the build token is used here only (checkout did not persist it)
+      git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" push -q origin HEAD:main
     displayName: Persist state and reviews
     condition: always()
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)

@@ -29,5 +29,6 @@ if [ "${2:-}" != "--no-pointer" ]; then
   mkdir -p "$(dirname "$POINTER")"
   echo "$WS" > "$POINTER"
   echo "pointer  $POINTER → $WS"
+  bash "$DIR/use-workspace.sh" "$WS" >/dev/null && echo "created  .claude/settings.local.json (kit permission rule)"
 fi
 echo "workspace ready: $WS"

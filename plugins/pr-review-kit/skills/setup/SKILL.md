@@ -18,15 +18,20 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/init-workspace.sh" "<dir>"
 
 It creates `config.env`, `repos.allowlist`, `team-notes.md`, `pipelines.map`,
 `jira-workflow.json`, `.claude/settings.json`, `state/` and `reviews/` without overwriting
-anything, and records the folder in `~/.config/pr-review-kit/workspace`.
+anything, records the folder in `~/.config/pr-review-kit/workspace`, and writes in
+`.claude/settings.local.json` the permission rule that lets the agent run the kit's scripts. The
+shared `.claude/settings.json` keeps the agent to those scripts, writes under `reviews/`, `state/`
+and `history.md`, and denies `curl`, `wget` and `git push`. Start review sessions from the
+workspace folder so these rules apply.
 
 ## 2. Ask for the values
 
 Ask in a few grouped questions (offer the detected or default value first):
 
 1. Azure DevOps organisation and project (`https://dev.azure.com/<org>/<project>`).
-2. Repositories in scope. If `AZURE_DEVOPS_PAT` is set, list them for the person to pick:
-   `curl -s -u ":$AZURE_DEVOPS_PAT" "https://dev.azure.com/<org>/<project>/_apis/git/repositories?api-version=7.0" | jq -r '.value[].name' | sort`.
+2. Repositories in scope. If `AZURE_DEVOPS_PAT` is set, first write `ADO_ORG` and `ADO_PROJECT`
+   into `<dir>/config.env`, then list them for the person to pick:
+   `bash "${CLAUDE_PLUGIN_ROOT}/scripts/ado-get.sh" "git/repositories?api-version=7.0" | jq -r '.value[].name' | sort`.
 3. Which of them are migration repositories, shared libraries, front-end portals.
 4. Ticket key prefixes (→ `TICKET_KEY_REGEX='(ABC|XYZ)-[0-9]+'`) and Jira base URL + account
    e-mail (or no Jira).
@@ -48,7 +53,8 @@ model, known false positives).
 ## 4. Check
 
 ```bash
-PRR_WORKSPACE="<dir>" bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/use-workspace.sh" "<dir>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh"
 ```
 
 Explain each ✗ and how to fix it. Finish with the next step: one dry-run review

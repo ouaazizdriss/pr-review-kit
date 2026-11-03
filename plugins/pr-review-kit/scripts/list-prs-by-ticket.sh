@@ -271,7 +271,9 @@ while :; do
             ($cutoff == 0)
             or ((.creationDate | sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) >= $cutoff)
           )
-        | [(.pullRequestId|tostring), .title, .sourceRefName, .status, .targetRefName, (.isDraft|tostring), .repository.name] | @tsv' \
+        | [(.pullRequestId|tostring), .title, .sourceRefName, .status, .targetRefName, (.isDraft|tostring), .repository.name]
+        | map(tostring | gsub("[[:cntrl:]]"; " "))   # no terminal control characters from API text
+        | @tsv' \
     >> "$RAW"
 
   [ "$n" -lt "$PAGE_SIZE" ] && break
