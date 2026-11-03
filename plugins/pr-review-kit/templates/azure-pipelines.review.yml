@@ -13,8 +13,9 @@
 # Credentials: each step receives only the secrets it needs. The GitHub token is used for the
 # marketplace clone only (one-shot credential helper, nothing written to disk); the checkout
 # token is not persisted in .git/config and is given to the final push step alone, so the agent
-# step never sees it. The agent step runs with the workspace's .claude/settings.json (kit scripts
-# only, no curl/wget/git push).
+# step never sees it; that step pushes from a fresh clone with hooks disabled. The agent step runs
+# with the workspace's .claude/settings.json (kit scripts only). Run check-test-compile only on
+# this throwaway agent, never on a machine holding other credentials.
 #
 # Verified on Claude Code 2.1.300: a namespaced plugin skill runs in headless mode
 # (claude -p "/pr-review-kit:doctor", plugin loaded with --plugin-dir, ${CLAUDE_PLUGIN_ROOT}
@@ -75,10 +76,23 @@ steps:
       GCHAT_WEBHOOK_URL: $(GCHAT_WEBHOOK_URL)
 
   - script: |
+      set -e
+      # The build token is used here only. Earlier steps ran PR-influenced code in the checkout,
+      # so its .git (hooks, config) is not trusted: push from a FRESH clone, with no global or
+      # system git config and hooks disabled, copying only the review outputs.
+      export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+      G=(git -c core.hooksPath=/dev/null -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN")
+      P="$(Agent.TempDirectory)/persist"; rm -rf "$P"
+      "${G[@]}" clone -q --depth 1 --branch main "$(Build.Repository.Uri)" "$P"
+      cd "$(Build.SourcesDirectory)"
+      for d in state reviews; do
+        [ -d "$d" ] && rsync -a --delete --no-links --exclude 'clones/' "$d/" "$P/$d/"
+      done
+      [ -f history.md ] && [ ! -L history.md ] && cp history.md "$P/"
+      cd "$P"
       git add -A state reviews history.md 2>/dev/null || true
-      git -c user.name="pr-review bot" -c user.email="pr-review-bot@invalid" commit -q -m "review run $(Build.BuildNumber)" || exit 0
-      # the build token is used here only (checkout did not persist it)
-      git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" push -q origin HEAD:main
+      "${G[@]}" -c user.name="pr-review bot" -c user.email="pr-review-bot@invalid" commit -q -m "review run $(Build.BuildNumber)" || exit 0
+      "${G[@]}" push -q origin HEAD:main
     displayName: Persist state and reviews
     condition: always()
     env:

@@ -18,6 +18,7 @@ CFG
   printf 'svc-a\n# comment\n\nsql\n' > "$WS/repos.allowlist"
   export PRR_WORKSPACE="$WS"
   export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg"
+  export XDG_STATE_HOME="$BATS_TEST_TMPDIR/xstate"
   export AZURE_DEVOPS_PAT="test-token"
   export FIXTURES="$BATS_TEST_DIRNAME/fixtures"
   export CURL_LOG="$BATS_TEST_TMPDIR/curl.log"; : > "$CURL_LOG"

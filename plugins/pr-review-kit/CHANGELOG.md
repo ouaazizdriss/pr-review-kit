@@ -7,6 +7,30 @@ All notable changes to the kit. The version is the `version` field of
 - **Minor** (x.**y**.0): a new check or setting.
 - **Major** (**x**.0.0): a change to a vote rule. Announced two weeks ahead; run it in dry-run first.
 
+## 1.0.3 — 2026-11-03
+
+Completes the 1.0.2 permission hardening. No vote rule changes.
+
+- The agent is no longer allowed `jq`, `date` or `git ls-remote`: `jq -n env` and `date -f <file>`
+  could read environment secrets and files, and git options such as `--upload-pack` run programs.
+  Skills now allow the kit's scripts only; the workspace settings also deny `env`, `printenv` and
+  every `git` command.
+- `show-config.sh` reports `today`; new `merge/list-branches.sh <repo> [glob]` lists release
+  branches through the refs API (replaces `git ls-remote` in merge-deploy).
+- Merge gate: `post.sh` also writes every vote to a protected ledger outside the workspace
+  (`~/.local/state/pr-review-kit/`), and `merge-pr.sh` trusts only that copy — an approval written
+  into `state/votes.jsonl` is ignored. `--expect-tip` is accepted from an interactive terminal only.
+  Fixed: the approval check had been duplicated inside the merge-status wait loop.
+- The kit refuses a workspace located under `state/`, `reviews/` or `outbox/` (`config.env` is
+  shell code); the workspace settings deny edits to any `config.env`, any `.claude/` folder,
+  `~/.local/state`, `~/.config` and `~/.claude`.
+- `check-test-compile.sh`: reads every page of the change list (fails closed); builds only when
+  every changed file is of a type a build does not execute; refuses repositories that build their
+  own annotation processor (verdict `in-repo-processor`).
+- Pipeline template: the persist step pushes from a fresh clone with hooks and global/system git
+  config disabled, copying only `state/`, `reviews/` and `history.md`.
+- Tests no longer write outside their temporary folder.
+
 ## 1.0.2 — 2026-11-03
 
 Hardening release: tighter agent permissions and credential handling. No vote rule changes.

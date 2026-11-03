@@ -12,17 +12,25 @@
 #           | "already-broken"     -> source AND base fail with compile errors (pre-existing)
 #           | "env-unverifiable"   -> dependency resolution failed (local env), not the PR's fault
 #           | "not-maven"          -> no pom.xml (not a Maven Spring Boot project)
-#           | "build-files-changed" -> the PR changes the build itself: NOT built (see below)
+#           | "build-files-changed" -> the PR changes the build itself, or files of a type the
+#                                     check does not know: NOT built (see below)
+#           | "in-repo-processor"  -> the repository builds its own annotation processor: NOT built
 #
 # Safety: building runs code chosen by the PR author (Maven plugins and extensions, annotation
-# processors). The check therefore
-#   - refuses to build a PR that changes pom.xml, .mvn/, mvnw*, a Maven settings file or an
-#     annotation-processor registration (verdict "build-files-changed": review those by hand);
-#     TC_ALLOW_BUILD_CHANGES=true overrides this, only for repositories whose authors you trust;
-#   - runs mvn with an EMPTY environment (no AZURE_DEVOPS_PAT, ANTHROPIC_API_KEY, JIRA_PAT, …):
-#     only PATH, HOME, JAVA_HOME, MAVEN_HOME and MAVEN_OPTS are passed;
-#   - builds offline when TC_OFFLINE=true (needs every dependency already in ~/.m2).
-# For stronger isolation, run the kit itself in a container or on a throwaway CI agent.
+# processors). javac itself does not run the compiled code, so the check builds a PR only when
+#   - EVERY changed file (all pages of the change list) is a source or resource of a known type
+#     that a build does not execute (.java .kt .properties .yml .yaml .sql .md .txt .csv, images) —
+#     scripts, package.json, JS or XML may be run by plugins already in the pom — and none is pom.xml, .mvn/, mvnw*, a Maven settings file or an annotation-processor
+#     registration (otherwise "build-files-changed": review those files by hand);
+#   - the checkout registers no annotation processor of its own (META-INF/services/
+#     javax.annotation.processing.Processor in a source tree): such a processor's code is PR-
+#     controlled and runs inside the build ("in-repo-processor");
+#   TC_ALLOW_BUILD_CHANGES=true lifts both refusals, only for repositories whose authors you trust.
+# mvn then runs with an EMPTY environment (only PATH, HOME, JAVA_HOME, MAVEN_HOME, MAVEN_OPTS) and
+# offline when TC_OFFLINE=true. Residual risk: a plugin already in the pom that runs project code
+# during the build (e.g. exec:java bound before test-compile). This is not a sandbox — a process of the same user can still read
+# other processes' environments under /proc — so for untrusted contributors run the kit on a
+# throwaway agent or in a container.
 set -uo pipefail
 
 REPO="${1:?usage: check-test-compile.sh <repo> <prId>}"
@@ -43,11 +51,19 @@ BASE=$(echo "$ITERS" | jq -r '.value | last | .commonRefCommit.commitId // empty
 
 # files that change what the build executes → do not build (unless explicitly allowed)
 LASTIT=$(echo "$ITERS" | jq -r '.value | last | .id // empty')
-CHANGED=$(curl -s -H "Authorization: Basic $AUTH" "$B/$REPO/pullRequests/$PRID/iterations/$LASTIT/changes?api-version=7.0" \
-  | jq -r '.changeEntries[]? | .item.path // empty')
-[ -z "$LASTIT" ] || [ -n "$CHANGED" ] || err "cannot list the changed files (PR $PRID / $REPO)"
+[ -n "$LASTIT" ] || err "cannot resolve the last iteration (PR $PRID / $REPO)"
+CHANGED=""; skip=0
+while :; do # every page; fail closed when a page cannot be read
+  page=$(curl -s -f -H "Authorization: Basic $AUTH" "$B/$REPO/pullRequests/$PRID/iterations/$LASTIT/changes?\$top=1000&\$skip=$skip&api-version=7.0") \
+    || err "cannot list the changed files (PR $PRID / $REPO)"
+  jq -e '.changeEntries | type == "array"' >/dev/null 2>&1 <<<"$page" || err "cannot list the changed files (PR $PRID / $REPO)"
+  CHANGED+=$(jq -r '.changeEntries[] | select((.item.isFolder // false) | not) | (.item.path // .originalPath // empty)' <<<"$page")$'\n'
+  next=$(jq -r '.nextSkip // 0' <<<"$page"); [ "$next" -gt "$skip" ] 2>/dev/null || break; skip=$next
+done
+[ -n "${CHANGED//[$'\n']/}" ] || err "no changed files listed (PR $PRID / $REPO)"
 BUILD_RE='(^|/)(pom\.xml|mvnw|mvnw\.cmd|settings\.xml|settings-security\.xml|toolchains\.xml)$|(^|/)\.mvn/|META-INF/services/javax\.annotation\.processing\.Processor$'
-BUILD_FILES=$(printf '%s\n' "$CHANGED" | grep -E "$BUILD_RE" | sort -u | head -20)
+KNOWN_RE='\.(java|kt|properties|ya?ml|sql|md|txt|csv|png|jpe?g|gif|svg|ico)$'   # never executed by a build
+BUILD_FILES=$( { printf '%s\n' "$CHANGED" | grep -E "$BUILD_RE"; printf '%s\n' "$CHANGED" | grep -v '^$' | grep -vE "$KNOWN_RE"; } | sort -u | head -20)
 if [ -n "$BUILD_FILES" ] && [ "${TC_ALLOW_BUILD_CHANGES:-false}" != true ]; then
   jq -n --arg r "$REPO" --argjson p "$PRID" --arg s "$SRC" --arg f "$BUILD_FILES" \
     '{repo:$r,prId:$p,src:$s[0:10],verdict:"build-files-changed",buildFiles:($f|split("\n"))}'
@@ -85,6 +101,12 @@ errors_json() { # compile errors, paths relative to the checkout
 }
 
 checkout "$SRC" "$WD/src" || err "git checkout failed (commit ${SRC:0:8})"
+PROCS=$(cd "$WD/src" && find . -path '*/src/*' -path '*META-INF/services/javax.annotation.processing.Processor' -not -path './.git/*' 2>/dev/null | sed 's#^\./##' | head -10)
+if [ -n "$PROCS" ] && [ "${TC_ALLOW_BUILD_CHANGES:-false}" != true ]; then
+  jq -n --arg r "$REPO" --argjson p "$PRID" --arg s "$SRC" --arg f "$PROCS" \
+    '{repo:$r,prId:$p,src:$s[0:10],verdict:"in-repo-processor",buildFiles:($f|split("\n"))}'
+  exit 0
+fi
 SP=$(build "$WD/src" "$WD/src.log")
 [ "$SP" = "not-maven" ] && { jq -n --arg r "$REPO" --argjson p "$PRID" '{repo:$r,prId:$p,verdict:"not-maven"}'; exit 0; }
 SERR=$(errors_json "$WD/src.log" "$WD/src")

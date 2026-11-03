@@ -4,8 +4,8 @@
 #
 # Preconditions checked live: PR active, not Draft, my vote is +10, merge evaluation
 # succeeded, and the source tip is the commit that was approved — the tip recorded with my
-# last +10 in $STATE_DIR/votes.jsonl, or the SHA given with --expect-tip. A push after the
-# approval therefore blocks the merge until the PR is reviewed again.
+# last +10 in the protected ledger (see prr_ledger_file), or the SHA a person gives with
+# --expect-tip at a terminal. A push after the approval blocks the merge until a new review.
 # Only MY active threads are resolved; an active thread opened by anyone else blocks the
 # merge. When the branch policy demands more approvers, the policy is bypassed only if
 # MERGE_ALLOW_BYPASS=true.
@@ -32,28 +32,24 @@ if [ "$st" = completed ]; then echo "OK $(jq -r .lastMergeCommit.commitId <<<"$j
 [ "$dr" = true ] && { echo "FAIL draft"; exit 1; }
 [ "$(jq -r --arg me "$ME" '[.reviewers[] | select(.id == $me) | .vote][0]' <<<"$j")" = 10 ] || { echo "FAIL my vote is no longer +10"; exit 1; }
 
-# the approved commit: --expect-tip, else the tip recorded with my last +10 on this PR
-approved="$EXPECT_TIP"
-if [ -z "$approved" ] && [ -f "$STATE_DIR/votes.jsonl" ]; then
-  approved=$(jq -r --arg r "$r" --argjson id "$id" 'select(.repo == $r and .id == $id)' "$STATE_DIR/votes.jsonl" 2>/dev/null \
+# the approved commit: the tip recorded with my last vote on this PR in the PROTECTED ledger
+# (written by post.sh only, outside the workspace). --expect-tip is accepted from a person at a
+# terminal only, never from an agent.
+if [ -n "$EXPECT_TIP" ]; then
+  [ -t 0 ] && [ -t 1 ] || { echo "FAIL --expect-tip is accepted only from an interactive terminal"; exit 1; }
+  approved="$EXPECT_TIP"
+else
+  LEDGER=$(prr_ledger_file)
+  approved=""
+  [ -f "$LEDGER" ] && approved=$(jq -c --arg r "$r" --argjson id "$id" 'select(.repo == $r and .id == $id)' "$LEDGER" 2>/dev/null \
     | jq -rs 'last // {} | if .vote == 10 then .tip // "" else "" end')
 fi
-[ -n "$approved" ] || { echo "FAIL no approved tip recorded for this PR (vote not cast through post.sh) — pass --expect-tip <reviewed commit>"; exit 1; }
-live=$(jq -r .lastMergeSourceCommit.commitId <<<"$j")
-[ "$live" = "$approved" ] || { echo "FAIL source tip moved since the approval: approved ${approved:0:10}, live ${live:0:10} — review the new commits first"; exit 1; }
+[ -n "$approved" ] || { echo "FAIL no approval recorded on this machine for this PR (last vote not a +10 cast through post.sh) — a person can pass --expect-tip <reviewed commit> from a terminal"; exit 1; }
 
 ms=$(jq -r .mergeStatus <<<"$j")
-for _ in $(seq 1 10); do [ "$ms" = queued ] || break; sleep 5; j=$(get); # the approved commit: --expect-tip, else the tip recorded with my last +10 on this PR
-approved="$EXPECT_TIP"
-if [ -z "$approved" ] && [ -f "$STATE_DIR/votes.jsonl" ]; then
-  approved=$(jq -r --arg r "$r" --argjson id "$id" 'select(.repo == $r and .id == $id)' "$STATE_DIR/votes.jsonl" 2>/dev/null \
-    | jq -rs 'last // {} | if .vote == 10 then .tip // "" else "" end')
-fi
-[ -n "$approved" ] || { echo "FAIL no approved tip recorded for this PR (vote not cast through post.sh) — pass --expect-tip <reviewed commit>"; exit 1; }
+for _ in $(seq 1 10); do [ "$ms" = queued ] || break; sleep 5; j=$(get); ms=$(jq -r .mergeStatus <<<"$j"); done
 live=$(jq -r .lastMergeSourceCommit.commitId <<<"$j")
 [ "$live" = "$approved" ] || { echo "FAIL source tip moved since the approval: approved ${approved:0:10}, live ${live:0:10} — review the new commits first"; exit 1; }
-
-ms=$(jq -r .mergeStatus <<<"$j"); done
 [ "$ms" = succeeded ] || { echo "FAIL mergeStatus=$ms"; exit 1; }
 if [ "$DRY" = 1 ]; then echo "OK dry-run (would squash-merge $(jq -r .lastMergeSourceCommit.commitId <<<"$j" | cut -c1-10))"; exit 0; fi
 

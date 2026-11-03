@@ -29,7 +29,7 @@ One folder per team, created by `setup` (or `scripts/init-workspace.sh <dir>`):
 ├── pipelines.map        merge-deploy: service=pipelineId
 ├── jira-workflow.json   merge-deploy: ticket moves and sub-tasks
 ├── .claude/settings.json  shared tool permissions: kit scripts only, writes under reviews/ state/
-│                        history.md, no curl / wget / git push
+│                        history.md, no curl / wget / git / jq / env
 ├── .claude/settings.local.json  per machine, written by use-workspace.sh: the rule that allows
 │                        this machine's installed kit scripts (do not commit)
 ├── reviews/<TICKET>/<date>/review1-PR-<id>.md
@@ -78,6 +78,7 @@ All under `scripts/`, runnable by hand (`bash scripts/<name>.sh`). Read-only unl
 | `protect-branch.sh` | audit / apply branch policies (`--apply` writes) |
 | `merge/merge-pr.sh` | squash-merge an approved PR, only at the approved commit (writes) |
 | `merge/cherry-pick-pr.sh` | one-commit carry-over to another branch (writes) |
+| `merge/list-branches.sh <repo> [glob]` | release branches in version order (refs API, read-only) |
 | `merge/presence.sh` | is a change already on a branch? |
 | `merge/jira.sh` | ticket state, moves, sub-tasks (writes to Jira) |
 | `merge/deploy.sh` | launch deployment pipelines (writes) |

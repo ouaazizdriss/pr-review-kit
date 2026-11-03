@@ -19,7 +19,8 @@
 #               feedback), votes refused (exit 5)
 #   votes       never -10; Draft → only 0; no self-vote on your own PR (exit 6);
 #               +5 only with POLICY_PROFILE=standard; always isRequired:true; the live
-#               vote is read back and appended to $STATE_DIR/votes.jsonl
+#               vote is read back and appended to $STATE_DIR/votes.jsonl and to the
+#               protected ledger outside the workspace (prr_ledger_file)
 # Output: one JSON line per action.
 set -uo pipefail
 . "$(dirname "$0")/lib/common.sh"
@@ -124,7 +125,7 @@ case "$KIND" in
       echo "$R" | jq -e '.id' >/dev/null 2>&1 || fail 1 "vote refused: $(echo "$R" | jq -r '.message // "unknown error"' | head -c 200)"
       LIVE=$(prr_get "$B?$V" | jq --arg me "$ME" '[.reviewers[]? | select(.id == $me)][0] | {vote, isRequired}')
       jq -cn --argjson pr "$PRID" --arg r "$REPO" --argjson v "$VOTE" --arg tip "$TIP" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        '{id:$pr, repo:$r, vote:$v, tip:$tip, date:$d}' >> "$STATE_DIR/votes.jsonl"
+        '{id:$pr, repo:$r, vote:$v, tip:$tip, date:$d}' | tee -a "$(prr_ledger_file)" >> "$STATE_DIR/votes.jsonl"
       jq -cn --arg k "$KIND" --argjson pr "$PRID" --argjson v "$VOTE" --argjson live "$LIVE" \
         '{ok:($live.vote == $v), kind:$k, pr:$pr, mode:"live", vote:$v, live:$live}'
     else outbox "$KIND" PUT "$B/reviewers/$ME?$V" "$BODY"; fi

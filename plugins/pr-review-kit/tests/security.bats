@@ -4,6 +4,7 @@
 load helpers
 
 setup() {
+  export XDG_STATE_HOME="$BATS_TEST_TMPDIR/xstate"
   setup_workspace
   # private copy of the fixtures, so a test can change the live PR
   cp -r "$FIXTURES" "$BATS_TEST_TMPDIR/fx"; export FIXTURES="$BATS_TEST_TMPDIR/fx"
@@ -12,7 +13,9 @@ setup() {
 live_tip() { # set the live source tip of PR 101
   jq --arg t "$1" '.lastMergeSourceCommit = {commitId: $t}' "$FIXTURES/pr-101.json" > "$FIXTURES/p" && mv "$FIXTURES/p" "$FIXTURES/pr-101.json"
 }
-approved() { echo "{\"id\":101,\"repo\":\"svc-a\",\"vote\":$2,\"tip\":\"$1\",\"date\":\"2026-10-03T09:00:00Z\"}" >> "$WS/state/votes.jsonl"; }
+approved() { # record a vote in the protected ledger, as post.sh does
+  mkdir -p "$XDG_STATE_HOME/pr-review-kit"
+  echo "{\"id\":101,\"repo\":\"svc-a\",\"vote\":$2,\"tip\":\"$1\",\"date\":\"2026-10-03T09:00:00Z\"}" >> "$XDG_STATE_HOME/pr-review-kit/votes-org-Proj.jsonl"; }
 
 @test "ado-get: relative path resolves to the organisation's project API" {
   run bash "$S/ado-get.sh" "git/pullrequests?searchCriteria.status=active&api-version=7.0"
@@ -35,7 +38,7 @@ approved() { echo "{\"id\":101,\"repo\":\"svc-a\",\"vote\":$2,\"tip\":\"$1\",\"d
   live_tip aaaa1111
   run bash "$S/merge/merge-pr.sh" svc-a 101 --dry-run
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no approved tip recorded"* ]]
+  [[ "$output" == *"no approval recorded"* ]]
 }
 
 @test "merge-pr: push after the approval → refused" {
@@ -49,7 +52,7 @@ approved() { echo "{\"id\":101,\"repo\":\"svc-a\",\"vote\":$2,\"tip\":\"$1\",\"d
   live_tip aaaa1111; approved aaaa1111 10; approved aaaa1111 -5
   run bash "$S/merge/merge-pr.sh" svc-a 101 --dry-run
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no approved tip recorded"* ]]
+  [[ "$output" == *"no approval recorded"* ]]
 }
 
 @test "merge-pr: approved tip unchanged → dry-run OK" {
@@ -57,14 +60,6 @@ approved() { echo "{\"id\":101,\"repo\":\"svc-a\",\"vote\":$2,\"tip\":\"$1\",\"d
   run bash "$S/merge/merge-pr.sh" svc-a 101 --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == "OK dry-run"* ]]
-}
-
-@test "merge-pr: --expect-tip must match the live tip" {
-  live_tip aaaa1111
-  run bash "$S/merge/merge-pr.sh" svc-a 101 --dry-run --expect-tip cccc3333
-  [ "$status" -eq 1 ]
-  run bash "$S/merge/merge-pr.sh" svc-a 101 --dry-run --expect-tip aaaa1111
-  [ "$status" -eq 0 ]
 }
 
 @test "merge-pr: another reviewer's active thread blocks the merge and is not resolved" {
@@ -86,4 +81,44 @@ approved() { echo "{\"id\":101,\"repo\":\"svc-a\",\"vote\":$2,\"tip\":\"$1\",\"d
   [[ "$output" == *"Bash(bash $S/*)"* ]]
   [[ "$output" != *"/old/pr-review-kit/"* ]]
   [ "$(jq -r .x "$WS/.claude/settings.local.json")" = 1 ]
+}
+
+@test "show-config reports today's date" {
+  run bash "$S/show-config.sh"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .today <<<"$output")" = "$(date +%F)" ]
+}
+
+@test "skills and workspace settings never allow jq, date, git or curl" {
+  ! grep -hE '^\s+- .*Bash\((jq|date|git|curl)' "$KIT"/skills/*/SKILL.md
+  run jq -r '.permissions.allow[]' "$KIT/templates/workspace-settings.json"
+  [[ "$output" != *"Bash(jq"* && "$output" != *"Bash(date"* && "$output" != *"Bash(git"* && "$output" != *"Bash(curl"* ]]
+}
+
+@test "post.sh: a cast vote is also written to the protected ledger outside the workspace" {
+  POST_MODE_TEST=comment+vote setup_workspace
+  bash "$S/post.sh" vote svc-a 101 -5 >/dev/null 2>&1 || true
+  [ -f "$XDG_STATE_HOME/pr-review-kit/votes-org-Proj.jsonl" ]
+}
+
+@test "merge-pr: an approval forged in state/votes.jsonl is ignored" {
+  live_tip aaaa1111
+  echo '{"id":101,"repo":"svc-a","vote":10,"tip":"aaaa1111","date":"2026-10-03T09:00:00Z"}' > "$WS/state/votes.jsonl"
+  run bash "$S/merge/merge-pr.sh" svc-a 101 --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no approval recorded"* ]]
+}
+
+@test "merge-pr: --expect-tip is refused without a terminal" {
+  live_tip aaaa1111
+  run bash "$S/merge/merge-pr.sh" svc-a 101 --dry-run --expect-tip aaaa1111 </dev/null
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"interactive terminal"* ]]
+}
+
+@test "a workspace inside state/ is refused (config.env is shell code)" {
+  mkdir -p "$WS/state/evil"; cp "$WS/config.env" "$WS/state/evil/config.env"
+  PRR_WORKSPACE="$WS/state/evil" run bash "$S/show-config.sh"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"refusing a workspace"* ]]
 }

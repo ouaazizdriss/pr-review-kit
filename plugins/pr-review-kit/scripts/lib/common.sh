@@ -41,6 +41,10 @@ prr_resolve_workspace() {
   [ -n "${PRR_WORKSPACE:-}" ] || prr_die "no workspace: set PRR_WORKSPACE or run /pr-review-kit:setup"
   PRR_WORKSPACE="${PRR_WORKSPACE/#\~/$HOME}"
   [ -d "$PRR_WORKSPACE" ] || prr_die "workspace not found: $PRR_WORKSPACE"
+  # config.env is sourced as shell code: never accept one from a folder the agent may write to
+  case "/$(cd "$PRR_WORKSPACE" && pwd)/" in
+    */state/*|*/reviews/*|*/outbox/*) prr_die "refusing a workspace inside a state/ or reviews/ folder: $PRR_WORKSPACE" ;;
+  esac
   export PRR_WORKSPACE
 }
 
@@ -96,6 +100,15 @@ prr_load() {
   fi
   export ADO_ORG ADO_PROJECT ADO_API_VERSION ADO_BASE ADO_REPOS_BASE ADO_PROJECT_API ADO_GIT_WEB \
          STATE_DIR REVIEWS_DIR HISTORY_FILE REVIEW_FILE_PREFIX REPO_ALLOWLIST_FILE
+}
+
+# prr_ledger_file — the PROTECTED votes ledger: outside the workspace, where the agent cannot
+# write (only post.sh appends to it). merge-pr.sh trusts this copy only; state/votes.jsonl is
+# the working copy used for detection.
+prr_ledger_file() {
+  local d="${XDG_STATE_HOME:-$HOME/.local/state}/pr-review-kit"
+  mkdir -p "$d" && chmod 700 "$d"
+  echo "$d/votes-${ADO_ORG}-${ADO_PROJECT}.jsonl"
 }
 
 # prr_curl <curl args…> — authenticated curl, 30 s timeout, never echoes the token.

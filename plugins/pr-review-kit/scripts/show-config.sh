@@ -22,9 +22,9 @@ jq -n \
   --argjson hasMerge "$([ -n "${AZURE_DEVOPS_MERGE_PAT:-}" ] && echo true || echo false)" \
   --argjson hasJira "$([ -n "${JIRA_PAT:-}" ] && echo true || echo false)" \
   --argjson hasChat "$([ -n "${GCHAT_WEBHOOK_URL:-}" ] && echo true || echo false)" \
-  --arg p "$P" --arg notes "$PRR_WORKSPACE/team-notes.md" '
+  --arg p "$P" --arg notes "$PRR_WORKSPACE/team-notes.md" --arg today "$(date +%F)" '
   def words: split(" ") | map(select(length > 0));
-  { workspace:$ws, stateDir:$state, reviewsDir:$reviews, historyFile:$history, reviewFilePrefix:$prefix,
+  { today:$today, workspace:$ws, stateDir:$state, reviewsDir:$reviews, historyFile:$history, reviewFilePrefix:$prefix,
     allowlist:$allow, teamNotes:$notes,
     ado:{org:$org, project:$proj, gitWeb:$web, reviewerId:$me},
     policy:{language:$lang, profile:$profile, postMode:$mode, marker:$marker, ticketKeyRegex:$ticket,
