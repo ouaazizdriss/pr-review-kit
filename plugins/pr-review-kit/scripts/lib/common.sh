@@ -17,6 +17,9 @@ PRR_SCRIPTS_DIR="$(cd "$PRR_LIB_DIR/.." && pwd)"
 PRR_PLUGIN_DIR="$(cd "$PRR_SCRIPTS_DIR/.." && pwd)"
 PRR_POINTER_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/pr-review-kit/workspace"
 PRR_GENERIC_MARKER='<!-- pr-review -->'
+# protected ledger folder, fixed from the CALLER's environment before config.env is sourced
+# (config.env is loaded with set -a and could otherwise redirect it)
+PRR_LEDGER_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/pr-review-kit"
 PRR_CONFIG_KEYS=(ADO_ORG ADO_PROJECT ADO_API_VERSION REPO_ALLOWLIST_FILE EXCLUDED_PRS TEAM_GROUP_ID TEAM_NAME
   SQL_REPOS LIBRARY_REPOS FRONT_REPOS SQL_PROCEDURE_DOCS TICKET_KEY_REGEX REVIEW_LANGUAGE POLICY_PROFILE
   UNIT_TESTS_BLOCKING SCANNERS SEMGREP_CONFIG PR_MARKER PR_MARKER_ALIASES POST_MODE REVIEW_PARALLEL_AGENTS
@@ -106,9 +109,15 @@ prr_load() {
 # write (only post.sh appends to it). merge-pr.sh trusts this copy only; state/votes.jsonl is
 # the working copy used for detection.
 prr_ledger_file() {
-  local d="${XDG_STATE_HOME:-$HOME/.local/state}/pr-review-kit"
-  mkdir -p "$d" && chmod 700 "$d"
-  echo "$d/votes-${ADO_ORG}-${ADO_PROJECT}.jsonl"
+  local d="$PRR_LEDGER_DIR" real ws
+  mkdir -p "$d" && chmod 700 "$d" || prr_die "cannot create the ledger folder $d"
+  [ -L "$d" ] && prr_die "ledger folder is a symbolic link: $d"
+  [ -O "$d" ] || prr_die "ledger folder not owned by you: $d"
+  real=$(cd "$d" && pwd -P); ws=$(cd "$PRR_WORKSPACE" && pwd -P)
+  case "$real/" in "$ws"/*) prr_die "ledger folder inside the workspace: $d" ;; esac
+  local f="$real/votes-${ADO_ORG}-${ADO_PROJECT}.jsonl"
+  [ -L "$f" ] && prr_die "ledger file is a symbolic link: $f"
+  echo "$f"
 }
 
 # prr_curl <curl args…> — authenticated curl, 30 s timeout, never echoes the token.

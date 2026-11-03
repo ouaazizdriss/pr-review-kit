@@ -14,7 +14,9 @@
 #               comment+vote → everything is posted
 #   marker      the content is prefixed with PR_MARKER when missing
 #   wording     refuses content that names an AI vendor or says the review is generated
-#   tip         --expect-tip refuses to post when the PR source tip moved (exit 3)
+#   tip         --expect-tip refuses to post when the PR source tip moved (exit 3); a +10
+#               REQUIRES --expect-tip with the full 40-character SHA of the reviewed commit, and
+#               the ledgers record that SHA (none if the tip moved during the vote)
 #   status      abandoned PR → refused; completed PR → comments allowed (post-merge
 #               feedback), votes refused (exit 5)
 #   votes       never -10; Draft → only 0; no self-vote on your own PR (exit 6);
@@ -53,7 +55,7 @@ AUTHOR_ID=$(echo "$PR" | jq -r '.createdBy.id // empty')
 [ "$STATUS" = abandoned ] && fail 5 "PR is abandoned"
 
 TIP=$(prr_get "$B/iterations?$V" | jq -r '.value | last | .sourceRefCommit.commitId // empty')
-if [ -n "$EXPECT_TIP" ] && [ "${TIP:0:${#EXPECT_TIP}}" != "$EXPECT_TIP" ]; then
+if [ -n "$EXPECT_TIP" ] && { [ -z "$TIP" ] || [ "${TIP:0:${#EXPECT_TIP}}" != "$EXPECT_TIP" ]; }; then
   fail 3 "source tip moved: reviewed ${EXPECT_TIP:0:10}, live ${TIP:0:10} — re-check the points before posting"
 fi
 
@@ -119,15 +121,25 @@ case "$KIND" in
     [ "$AUTHOR_ID" = "$ME" ] && fail 6 "self-authored PR: Azure DevOps refuses the author's vote — comment only"
     [ "$STATUS" = completed ] && fail 5 "PR already merged: post the review as post-merge feedback, no vote"
     [ "$DRAFT" = true ] && [ "$VOTE" != 0 ] && fail 2 "Draft PR: comment only, the only allowed vote is 0 (required reviewer)"
+    # an approval is bound to the exact commit that was reviewed
+    if [ "$VOTE" = 10 ]; then
+      [[ "$EXPECT_TIP" =~ ^[0-9a-f]{40}$ ]] || fail 2 "+10 needs --expect-tip <full 40-character SHA of the reviewed commit>"
+      [ "$TIP" = "$EXPECT_TIP" ] || fail 3 "source tip moved: reviewed ${EXPECT_TIP:0:10}, live ${TIP:0:10}"
+    fi
+    REVIEWED="${EXPECT_TIP:-$TIP}"; [ "${#REVIEWED}" -lt "${#TIP}" ] && REVIEWED="$TIP"
     BODY=$(jq -cn --argjson v "$VOTE" '{vote:$v,isRequired:true}')
     if live_allowed vote; then
       R=$(prr_curl -X PUT -H "Content-Type: application/json" -d "$BODY" "$B/reviewers/$ME?$V")
       echo "$R" | jq -e '.id' >/dev/null 2>&1 || fail 1 "vote refused: $(echo "$R" | jq -r '.message // "unknown error"' | head -c 200)"
       LIVE=$(prr_get "$B?$V" | jq --arg me "$ME" '[.reviewers[]? | select(.id == $me)][0] | {vote, isRequired}')
-      jq -cn --argjson pr "$PRID" --arg r "$REPO" --argjson v "$VOTE" --arg tip "$TIP" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      # a push during the vote: the vote no longer applies to what was reviewed → record no tip
+      AFTER=$(prr_get "$B/iterations?$V" | jq -r '.value | last | .sourceRefCommit.commitId // empty')
+      MOVED=false; [ "$AFTER" = "$TIP" ] || { MOVED=true; REVIEWED=""; }
+      jq -cn --argjson pr "$PRID" --arg r "$REPO" --argjson v "$VOTE" --arg tip "$REVIEWED" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{id:$pr, repo:$r, vote:$v, tip:$tip, date:$d}' | tee -a "$(prr_ledger_file)" >> "$STATE_DIR/votes.jsonl"
-      jq -cn --arg k "$KIND" --argjson pr "$PRID" --argjson v "$VOTE" --argjson live "$LIVE" \
-        '{ok:($live.vote == $v), kind:$k, pr:$pr, mode:"live", vote:$v, live:$live}'
+      jq -cn --arg k "$KIND" --argjson pr "$PRID" --argjson v "$VOTE" --argjson live "$LIVE" --argjson moved "$MOVED" \
+        '{ok:(($live.vote == $v) and ($moved | not)), kind:$k, pr:$pr, mode:"live", vote:$v, live:$live}
+         + (if $moved then {error:"source tip moved during the vote: re-review the new commits"} else {} end)'
     else outbox "$KIND" PUT "$B/reviewers/$ME?$V" "$BODY"; fi
     ;;
   reopen)

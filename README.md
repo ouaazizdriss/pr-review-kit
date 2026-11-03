@@ -47,7 +47,7 @@ review says so. The review never quietly passes a check that did not run:
 | `semgrep` | SAST on the PR's changed files (`scan-pr.sh`) | downloads its rules from semgrep.dev (`SEMGREP_CONFIG`, default `p/default`) |
 | `trivy` | dependency CVEs, secrets and misconfigurations when dependencies or IaC change | downloads its vulnerability database on first run |
 | `mvn` + a JDK | checks that main and test sources compile (`check-test-compile.sh`) | private artefacts must be resolvable through your `~/.m2/settings.xml`, otherwise the result is `env-unverifiable` (reported, not blocking) |
-| `python3` | merge module: automatic resolution of import-only conflicts | |
+| `python3` | build analysis before `check-test-compile.sh`; merge module: automatic resolution of import-only conflicts | without it the compile check is skipped |
 | `whiptail` | interactive menu of `list-prs-by-ticket.sh` | |
 | `google-chrome` | PDF batch reports in the merge module | Markdown reports work without it |
 
@@ -160,7 +160,7 @@ claude --plugin-dir plugins/pr-review-kit       # try local changes without inst
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every push.
 
-## Known limits (1.0.3)
+## Known limits (1.0.4)
 
 - Linux and WSL only.
 - Azure DevOps and Jira Cloud only.

@@ -122,3 +122,31 @@ approved() { # record a vote in the protected ledger, as post.sh does
   [ "$status" -eq 2 ]
   [[ "$output" == *"refusing a workspace"* ]]
 }
+
+full_tip() { # make the live tip of PR 101 a full 40-character SHA
+  T40=0123456789abcdef0123456789abcdef01234567
+  printf '{"value":[{"id":1,"sourceRefCommit":{"commitId":"%s"},"commonRefCommit":{"commitId":"base0000"}}]}' "$T40" > "$FIXTURES/iterations-101.json"
+}
+
+@test "post.sh: +10 without the full reviewed SHA is refused" {
+  full_tip
+  run bash "$S/post.sh" vote svc-a 101 10
+  [ "$status" -eq 2 ]
+  run bash "$S/post.sh" vote svc-a 101 10 --expect-tip 0123456789
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"full 40-character SHA"* ]]
+}
+
+@test "post.sh: +10 records the reviewed SHA in the protected ledger" {
+  full_tip
+  sed -i 's|^POST_MODE=.*|POST_MODE="comment+vote"|' "$WS/config.env"
+  run bash "$S/post.sh" vote svc-a 101 10 --expect-tip "$T40"
+  [ "$(jq -r .tip "$XDG_STATE_HOME/pr-review-kit/votes-org-Proj.jsonl")" = "$T40" ]
+  [ "$(jq -r .vote "$XDG_STATE_HOME/pr-review-kit/votes-org-Proj.jsonl")" = 10 ]
+}
+
+@test "post.sh: +10 against a moved tip is refused" {
+  full_tip
+  run bash "$S/post.sh" vote svc-a 101 10 --expect-tip ffffffffffffffffffffffffffffffffffffffff
+  [ "$status" -eq 3 ]
+}

@@ -7,6 +7,21 @@ All notable changes to the kit. The version is the `version` field of
 - **Minor** (x.**y**.0): a new check or setting.
 - **Major** (**x**.0.0): a change to a vote rule. Announced two weeks ahead; run it in dry-run first.
 
+## 1.0.4 — 2026-11-03
+
+No vote rule changes.
+
+- `post.sh`: a +10 requires `--expect-tip` with the full 40-character SHA of the reviewed commit;
+  the ledgers record that SHA, and no SHA when the tip moved while the vote was being cast (the
+  output then says to re-review). Merges therefore only ever take a commit that was reviewed.
+- The protected ledger folder is fixed before `config.env` is read, and refused when it is a
+  symbolic link, not owned by the user, or inside the workspace.
+- `check-test-compile.sh` analyses the project's poms (python3) and does not build when the build
+  would run code of the repository itself — an annotation processor registered anywhere in the
+  checkout or taken from a module of the repository, explicit processors, a `maven-plugin`
+  module, exec / antrun / frontend / groovy / invoker / jbang plugins (verdict
+  `build-runs-project-code`, replaces `in-repo-processor`).
+
 ## 1.0.3 — 2026-11-03
 
 Completes the 1.0.2 permission hardening. No vote rule changes.

@@ -26,7 +26,7 @@ if command -v jq >/dev/null 2>&1; then
 fi
 
 section "Tools (optional — the matching check is skipped and reported when missing)"
-for t in semgrep:scan-pr.sh trivy:scan-pr.sh mvn:check-test-compile.sh python3:merge/resolve-imports.py whiptail:interactive\ menus google-chrome:PDF\ reports; do
+for t in semgrep:scan-pr.sh trivy:scan-pr.sh mvn:check-test-compile.sh python3:check-test-compile.sh\ and\ merge/resolve-imports.py whiptail:interactive\ menus google-chrome:PDF\ reports; do
   name=${t%%:*}; use=${t#*:}
   if command -v "$name" >/dev/null 2>&1; then ok "$name ($use)"; else warn "$name not found — $use unavailable"; fi
 done

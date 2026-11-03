@@ -63,7 +63,8 @@ Using the REST API through `ado-get.sh` (paths relative to the project API, e.g.
   Note author replies, questions to the reviewer, other reviewers' points, short unmarked comments
   under the reviewer id (owner decisions — apply them, P7).
 - `GET …/pullRequests/<id>/iterations` → last iteration: `sourceRefCommit` (tip),
-  `commonRefCommit` (merge base). Remember the tip: you will pass it to `post.sh --expect-tip`.
+  `commonRefCommit` (merge base). Remember the tip (full 40-character SHA): you will pass it to
+  `post.sh --expect-tip` — a +10 is refused without it.
 - The ticket key: first match of the ticket regex in the title, then the source branch.
 
 Decide the kind of review: first review (no team thread), re-review (team thread exists), Draft

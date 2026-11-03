@@ -14,7 +14,9 @@
 #           | "not-maven"          -> no pom.xml (not a Maven Spring Boot project)
 #           | "build-files-changed" -> the PR changes the build itself, or files of a type the
 #                                     check does not know: NOT built (see below)
-#           | "in-repo-processor"  -> the repository builds its own annotation processor: NOT built
+#           | "build-runs-project-code" -> the build would run code of the repository itself
+#                                     (own annotation processor or Maven plugin, exec/antrun/
+#                                     frontend/groovy plugins, explicit processors): NOT built
 #
 # Safety: building runs code chosen by the PR author (Maven plugins and extensions, annotation
 # processors). javac itself does not run the compiled code, so the check builds a PR only when
@@ -22,13 +24,14 @@
 #     that a build does not execute (.java .kt .properties .yml .yaml .sql .md .txt .csv, images) —
 #     scripts, package.json, JS or XML may be run by plugins already in the pom — and none is pom.xml, .mvn/, mvnw*, a Maven settings file or an annotation-processor
 #     registration (otherwise "build-files-changed": review those files by hand);
-#   - the checkout registers no annotation processor of its own (META-INF/services/
-#     javax.annotation.processing.Processor in a source tree): such a processor's code is PR-
-#     controlled and runs inside the build ("in-repo-processor");
+#   - the build would not run code of the repository itself: no annotation processor registered
+#     anywhere in the checkout, no processor path pointing to a module of the repository, no
+#     explicit annotationProcessors / -processor, no maven-plugin module, no exec, antrun,
+#     frontend, groovy, invoker or jbang plugin ("build-runs-project-code");
 #   TC_ALLOW_BUILD_CHANGES=true lifts both refusals, only for repositories whose authors you trust.
 # mvn then runs with an EMPTY environment (only PATH, HOME, JAVA_HOME, MAVEN_HOME, MAVEN_OPTS) and
-# offline when TC_OFFLINE=true. Residual risk: a plugin already in the pom that runs project code
-# during the build (e.g. exec:java bound before test-compile). This is not a sandbox — a process of the same user can still read
+# offline when TC_OFFLINE=true. Residual risk: plugins this list does not know that run project
+# code or files during the build. This is not a sandbox — a process of the same user can still read
 # other processes' environments under /proc — so for untrusted contributors run the kit on a
 # throwaway agent or in a container.
 set -uo pipefail
@@ -101,10 +104,50 @@ errors_json() { # compile errors, paths relative to the checkout
 }
 
 checkout "$SRC" "$WD/src" || err "git checkout failed (commit ${SRC:0:8})"
-PROCS=$(cd "$WD/src" && find . -path '*/src/*' -path '*META-INF/services/javax.annotation.processing.Processor' -not -path './.git/*' 2>/dev/null | sed 's#^\./##' | head -10)
-if [ -n "$PROCS" ] && [ "${TC_ALLOW_BUILD_CHANGES:-false}" != true ]; then
-  jq -n --arg r "$REPO" --argjson p "$PRID" --arg s "$SRC" --arg f "$PROCS" \
-    '{repo:$r,prId:$p,src:$s[0:10],verdict:"in-repo-processor",buildFiles:($f|split("\n"))}'
+# does the build run code that lives in this repository (and so is PR-controlled)?
+RUNS=$(python3 -I - "$WD/src" <<'PY'
+import os, sys, xml.etree.ElementTree as ET
+root = sys.argv[1]
+RISKY = {"exec-maven-plugin", "maven-antrun-plugin", "frontend-maven-plugin", "gmavenplus-plugin",
+         "groovy-maven-plugin", "maven-invoker-plugin", "jbang-maven-plugin", "maven-plugin-plugin"}
+def local(t): return t.rsplit("}", 1)[-1]
+def kids(e, name): return [c for c in e if local(c.tag) == name]
+def text(e, name):
+    c = kids(e, name); return (c[0].text or "").strip() if c else ""
+poms, reasons, reactor = [], [], set()
+for d, dirs, files in os.walk(root):
+    dirs[:] = [x for x in dirs if x not in (".git", "target", "node_modules")]
+    for f in files:
+        rel = os.path.relpath(os.path.join(d, f), root)
+        if f == "javax.annotation.processing.Processor" and "META-INF/services" in rel:
+            reasons.append("annotation processor registered in the repository: " + rel)
+        if f == "pom.xml":
+            try: poms.append((rel, ET.parse(os.path.join(d, f)).getroot()))
+            except ET.ParseError: reasons.append("unparsable " + rel)
+for rel, p in poms:
+    a = text(p, "artifactId")
+    if a: reactor.add(a)
+for rel, p in poms:
+    if text(p, "packaging") == "maven-plugin":
+        reasons.append("Maven plugin built in the repository: " + rel)
+    for e in p.iter():
+        n = local(e.tag)
+        if n == "plugin" and text(e, "artifactId") in RISKY:
+            reasons.append(text(e, "artifactId") + " in " + rel)
+        elif n == "annotationProcessorPaths":
+            for path in e:
+                if text(path, "artifactId") in reactor:
+                    reasons.append("annotation processor from a module of the repository (" + text(path, "artifactId") + ") in " + rel)
+        elif n == "annotationProcessors":
+            reasons.append("explicit annotationProcessors in " + rel)
+        elif n in ("compilerArg", "arg") and (e.text or "").strip().startswith("-processor"):
+            reasons.append("-processor compiler argument in " + rel)
+print("\n".join(sorted(set(reasons))[:20]))
+PY
+) || err "cannot analyse the project build (python3 needed)"
+if [ -n "$RUNS" ] && [ "${TC_ALLOW_BUILD_CHANGES:-false}" != true ]; then
+  jq -n --arg r "$REPO" --argjson p "$PRID" --arg s "$SRC" --arg f "$RUNS" \
+    '{repo:$r,prId:$p,src:$s[0:10],verdict:"build-runs-project-code",reasons:($f|split("\n"))}'
   exit 0
 fi
 SP=$(build "$WD/src" "$WD/src.log")
